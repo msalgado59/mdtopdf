@@ -1,15 +1,14 @@
 // .netlify/functions/pdf.js
-// CommonJS + marked + jsPDF + jspdf-plugin-autotable → Full table & text support
+// Using pdfmake + marked for full table & text support on Netlify
 const marked = require('marked');
-const jsPDF = require('jspdf');
-require('jspdf-plugin-autotable'); // Ajoute le support des tableaux
+const pdfmake = require('pdfmake');
+const vfsFonts = require('pdfmake/build/vfs_fonts');
 
-// Configuration de marked
-marked.setOptions({
-  gfm: true,
-  breaks: true,
-  sanitize: false,
-});
+// Configurer pdfmake avec les polices
+pdfmake.vfs = {
+  ...pdfmake.vfs,
+  ...vfsFonts.pdfMake.vfs,
+};
 
 module.exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -26,109 +25,107 @@ module.exports.handler = async (event) => {
   }
 
   try {
-    // Parser le Markdown
+    // Parser le markdown en tokens
     const tokens = marked.lexer(markdown);
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+    const content = [];
 
-    let y = 20; // Position verticale initiale
-    doc.setFontSize(12);
-    doc.setFont('helvetica');
-
-    // Style global
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const margin = 15;
-    const maxWidth = pageWidth - margin * 2;
-
-    // Traitement des tokens Markdown
     for (const token of tokens) {
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(12);
-
       if (token.type === 'heading') {
-        doc.setFontSize(14 + (6 - token.depth * 2)); // # = 14, ## = 12, etc.
-        doc.setFont(undefined, 'bold');
-        const text = token.text;
-        const lines = doc.splitTextToSize(text, maxWidth);
-        doc.text(lines, margin, y);
-        y += 10;
+        content.push({
+          text: token.text,
+          fontSize: 16 - token.depth,
+          bold: true,
+          margin: [0, 10, 0, 5],
+        });
       }
 
       else if (token.type === 'text') {
-        const text = token.tokens
-          ? token.tokens.map(t => t.text || '').join('')
-          : token.text;
-        const lines = doc.splitTextToSize(text, maxWidth);
-        doc.text(lines, margin, y);
-        y += lines.length * 6 + 4;
+        const inlineTokens = token.tokens || [];
+        const chunks = [];
+        for (const t of inlineTokens) {
+          if (t.type === 'text') chunks.push(t.text);
+          else if (t.type === 'strong') chunks.push({ text: t.text, bold: true });
+          else if (t.type === 'em') chunks.push({ text: t.text, italics: true });
+          else if (t.type === 'codespan') chunks.push({ text: t.text, font: 'Courier' });
+          else if (t.type === 'link') chunks.push({ text: t.text, link: t.href, color: 'blue' });
+        }
+        content.push({
+          text: chunks,
+          margin: [0, 5],
+        });
       }
 
       else if (token.type === 'list') {
-        for (const item of token.items) {
-          const itemText = item.tokens.map(t => t.text || '').join('');
-          const lines = doc.splitTextToSize(' • ' + itemText, maxWidth);
-          doc.text(lines, margin + 5, y);
-          y += lines.length * 6 + 4;
-        }
+        content.push({
+          ul: token.items.map(item => {
+            const inline = item.tokens.map(t => typeof t === 'string' ? t : t.text || '').join('');
+            return inline;
+          }),
+          margin: [0, 5, 0, 10],
+        });
       }
 
       else if (token.type === 'table') {
-        // Prépare les données du tableau
-        const tableData = [];
-        const headers = token.header.map(cell => ({ content: cell.text, styles: { fontStyle: 'bold' } }));
-        tableData.push(headers);
+        const tableBody = [];
+        const headerRow = token.header.map(cell => ({
+          text: cell.text,
+          style: 'tableHeader',
+        }));
+        tableBody.push(headerRow);
 
         for (const row of token.rows) {
           const rowData = row.map(cell => cell.text);
-          tableData.push(rowData);
+          tableBody.push(rowData);
         }
 
-        // Ajoute le tableau au PDF
-        doc.autoTable({
-          head: [tableData[0].map(h => h.content)],
-          body: tableData.slice(1),
-          startY: y,
-          margin: { left: margin, right: margin },
-          styles: { fontSize: 10, cellPadding: 3 },
-          headStyles: { fillColor: [200, 200, 200], fontStyle: 'bold' },
+        content.push({
+          table: {
+            headerRows: 1,
+            widths: Array(token.header.length).fill('auto'),
+            body: tableBody,
+          },
+          margin: [0, 10, 0, 10],
+          layout: 'lightHorizontalLines',
         });
-
-        y = doc.lastAutoTable.finalY + 10;
       }
 
       else if (token.type === 'code') {
-        doc.setFont('courier');
-        doc.setFontSize(10);
-        const lines = doc.splitTextToSize(token.text, maxWidth - 10);
-        for (const line of lines) {
-          if (y + 5 > 280) doc.addPage();
-          doc.text(line, margin + 5, y);
-          y += 4;
-        }
-        doc.setFont('helvetica');
-        doc.setFontSize(12);
-        y += 5;
+        content.push({
+          text: token.text,
+          font: 'Courier',
+          fontSize: 10,
+          background: '#f0f0f0',
+          margin: [10, 5],
+          padding: 5,
+        });
       }
 
       else if (token.type === 'hr') {
-        y += 5;
-        doc.setDrawColor(200);
-        doc.line(margin, y, pageWidth - margin, y);
-        y += 10;
-      }
-
-      // Nouvelle page si nécessaire
-      if (y > 250) {
-        doc.addPage();
-        y = 20;
+        content.push({
+          canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, color: '#ccc' }],
+          margin: [0, 10],
+        });
       }
     }
 
     // Générer le PDF
-    const pdfBuffer = doc.output('arraybuffer');
+    const docDef = {
+      content,
+      styles: {
+        tableHeader: {
+          bold: true,
+          fillColor: '#eeeeee',
+          color: '#000',
+        },
+      },
+    };
+
+    const doc = new pdfmake.createPdfKitDocument(docDef);
+    const chunks = [];
+    for await (const chunk of doc) {
+      chunks.push(chunk);
+    }
+    const pdfBuffer = Buffer.concat(chunks);
 
     return {
       statusCode: 200,
@@ -136,17 +133,14 @@ module.exports.handler = async (event) => {
         'Content-Type': 'application/pdf',
         'Content-Disposition': 'attachment; filename="document.pdf"',
       },
-      body: Buffer.from(pdfBuffer).toString('base64'),
+      body: pdfBuffer.toString('base64'),
       isBase64Encoded: true,
     };
   } catch (error) {
     console.error('PDF Generation Error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({
-        error: 'PDF generation failed',
-        details: error.message,
-      }),
+      body: JSON.stringify({ error: 'PDF generation failed', details: error.message }),
     };
   }
 };
