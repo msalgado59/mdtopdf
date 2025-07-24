@@ -1,11 +1,11 @@
 {
   "name": "md2pdf-api",
   "version": "1.0.0",
-  "description": "Lightweight Markdown to PDF (no puppeteer, no phantomjs)",
-  "type": "module",
+  "description": "Markdown to PDF with tables, code, lists — fully compatible with Netlify",
   "dependencies": {
     "marked": "^15.0.3",
-    "jspdf": "^2.5.1"
+    "jspdf": "^2.5.1",
+    "jspdf-plugin-autotable": "^3.5.28"
   },
   "engines": {
     "node": "18.x"
