@@ -1,14 +1,12 @@
 // .netlify/functions/pdf.js
-// Using pdfmake + marked for full table & text support on Netlify
+// Version corrigée — Fonctionne sur Netlify
 const marked = require('marked');
 const pdfmake = require('pdfmake');
-const vfsFonts = require('pdfmake/build/vfs_fonts');
 
-// Configurer pdfmake avec les polices
-pdfmake.vfs = {
-  ...pdfmake.vfs,
-  ...vfsFonts.pdfMake.vfs,
-};
+// ✅ Correction ici : les polices doivent être chargées comme ceci
+const vfsFonts = require('pdfmake/build/vfs_fonts');
+pdfmake.vfs = vfsFonts.pdfMake.vfs; // 👈 Pas de destructuring, on assigne directement
+// ou : Object.assign(pdfmake.vfs, vfsFonts.pdfMake.vfs); si tu veux l'agrandir
 
 module.exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') {
@@ -25,7 +23,6 @@ module.exports.handler = async (event) => {
   }
 
   try {
-    // Parser le markdown en tokens
     const tokens = marked.lexer(markdown);
     const content = [];
 
@@ -33,94 +30,62 @@ module.exports.handler = async (event) => {
       if (token.type === 'heading') {
         content.push({
           text: token.text,
-          fontSize: 16 - token.depth,
+          fontSize: 18 - (token.depth * 2),
           bold: true,
           margin: [0, 10, 0, 5],
         });
-      }
-
-      else if (token.type === 'text') {
-        const inlineTokens = token.tokens || [];
-        const chunks = [];
-        for (const t of inlineTokens) {
-          if (t.type === 'text') chunks.push(t.text);
-          else if (t.type === 'strong') chunks.push({ text: t.text, bold: true });
-          else if (t.type === 'em') chunks.push({ text: t.text, italics: true });
-          else if (t.type === 'codespan') chunks.push({ text: t.text, font: 'Courier' });
-          else if (t.type === 'link') chunks.push({ text: t.text, link: t.href, color: 'blue' });
-        }
-        content.push({
-          text: chunks,
-          margin: [0, 5],
+      } else if (token.type === 'text') {
+        const inline = token.tokens || [];
+        const chunks = inline.map(t => {
+          if (t.type === 'text') return t.text;
+          if (t.type === 'strong') return { text: t.text, bold: true };
+          if (t.type === 'em') return { text: t.text, italics: true };
+          if (t.type === 'codespan') return { text: t.text, font: 'Courier' };
+          if (t.type === 'link') return { text: t.text, link: t.href, color: 'blue' };
+          return t.text || '';
         });
-      }
-
-      else if (token.type === 'list') {
-        content.push({
-          ul: token.items.map(item => {
-            const inline = item.tokens.map(t => typeof t === 'string' ? t : t.text || '').join('');
-            return inline;
-          }),
-          margin: [0, 5, 0, 10],
+        content.push({ text: chunks, margin: [0, 5] });
+      } else if (token.type === 'list') {
+        const listItems = token.items.map(item => {
+          return (item.tokens || []).map(t => t.text || '').join('');
         });
-      }
-
-      else if (token.type === 'table') {
-        const tableBody = [];
-        const headerRow = token.header.map(cell => ({
-          text: cell.text,
-          style: 'tableHeader',
-        }));
-        tableBody.push(headerRow);
+        content.push({ [token.ordered ? 'ol' : 'ul']: listItems, margin: [0, 5, 0, 10] });
+      } else if (token.type === 'table') {
+        const body = [];
+        const headerRow = token.header.map(cell => ({ text: cell.text, style: 'tableHeader' }));
+        body.push(headerRow);
 
         for (const row of token.rows) {
-          const rowData = row.map(cell => cell.text);
-          tableBody.push(rowData);
+          body.push(row.map(cell => cell.text));
         }
 
         content.push({
-          table: {
-            headerRows: 1,
-            widths: Array(token.header.length).fill('auto'),
-            body: tableBody,
-          },
-          margin: [0, 10, 0, 10],
+          table: { body, headerRows: 1 },
           layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 10],
         });
-      }
-
-      else if (token.type === 'code') {
+      } else if (token.type === 'code') {
         content.push({
           text: token.text,
           font: 'Courier',
           fontSize: 10,
-          background: '#f0f0f0',
+          background: '#f4f4f4',
           margin: [10, 5],
           padding: 5,
         });
-      }
-
-      else if (token.type === 'hr') {
-        content.push({
-          canvas: [{ type: 'line', x1: 0, y1: 0, x2: 515, y2: 0, lineWidth: 1, color: '#ccc' }],
-          margin: [0, 10],
-        });
+      } else if (token.type === 'hr') {
+        content.push({ canvas: [{ type: 'line', x1: 0, y1: 5, x2: 515, y2: 5, lineWidth: 1, color: '#ccc' }], margin: [0, 10] });
       }
     }
 
-    // Générer le PDF
-    const docDef = {
+    const docDefinition = {
       content,
       styles: {
-        tableHeader: {
-          bold: true,
-          fillColor: '#eeeeee',
-          color: '#000',
-        },
+        tableHeader: { bold: true, fillColor: '#eeeeee' },
       },
     };
 
-    const doc = new pdfmake.createPdfKitDocument(docDef);
+    const doc = new pdfmake.createPdfKitDocument(docDefinition);
     const chunks = [];
     for await (const chunk of doc) {
       chunks.push(chunk);
@@ -140,7 +105,10 @@ module.exports.handler = async (event) => {
     console.error('PDF Generation Error:', error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: 'PDF generation failed', details: error.message }),
+      body: JSON.stringify({
+        error: 'PDF generation failed',
+        details: error.message,
+      }),
     };
   }
 };
