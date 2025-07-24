@@ -1,13 +1,11 @@
 {
-  "name": "md2pdf-netlify",
+  "name": "md2pdf-api",
   "version": "1.0.0",
-  "description": "Markdown to PDF API with Netlify Functions",
-  "main": "index.js",
-  "scripts": {
-    "build": "echo 'No build needed'"
-  },
+  "description": "Lightweight Markdown to PDF (no puppeteer, no phantomjs)",
+  "type": "module",
   "dependencies": {
-    "md-to-pdf": "^5.2.4"
+    "marked": "^15.0.3",
+    "jspdf": "^2.5.1"
   },
   "engines": {
     "node": "18.x"
