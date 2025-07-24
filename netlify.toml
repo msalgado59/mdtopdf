@@ -1,1 +1,2 @@
-.netlify/functions/pdf.js
+[build]
+  functions = ".netlify/functions"
