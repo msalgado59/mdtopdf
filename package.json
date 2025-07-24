@@ -7,7 +7,7 @@
     "build": "echo 'No build needed'"
   },
   "dependencies": {
-    "md-to-pdf": "^7.1.0"
+    "md-to-pdf": "^5.2.4"
   },
   "engines": {
     "node": "18.x"
