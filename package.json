@@ -1,11 +1,10 @@
 {
   "name": "md2pdf-api",
   "version": "1.0.0",
-  "description": "Markdown to PDF with tables, code, lists — fully compatible with Netlify",
+  "description": "Markdown to PDF with tables using pdfmake",
   "dependencies": {
     "marked": "^15.0.3",
-    "jspdf": "^2.5.1",
-    "jspdf-plugin-autotable": "^3.5.28"
+    "pdfmake": "^0.2.10"
   },
   "engines": {
     "node": "18.x"
